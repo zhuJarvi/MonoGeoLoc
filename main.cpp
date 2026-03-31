@@ -4,7 +4,6 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
-#include <iostream>
 #include <optional>
 #include <string>
 #include <vector>
@@ -244,11 +243,10 @@ int main(int argc, char** argv) {
 	cap.open(src, cv::CAP_V4L2);
 
 	if (!cap.isOpened()) {
-		std::cerr << "Cannot open source: " << src << std::endl;
-		std::cerr << "Usage: ./main_node [camera_id|video_path|image_path] [--width=1280 --height=720 --fps=30 --buffer=1 --auto_focus=0 --auto_exposure=1 --exposure=-6 --gain=0]"
-				  << std::endl;
+		spdlog::error("Failed to open input source: {}", src);
 		return 1;
 	}
+	spdlog::info("Video source opened: {}", src);
 
 
 	cv::Mat frame;
@@ -263,7 +261,7 @@ int main(int argc, char** argv) {
 			float angle_x = (center.x / frame.cols - 0.5f) * 10;
 			float angle_y = (center.y / frame.rows - 0.5f) * 10;
 
-			spdlog::info("angle to move : yaw {} deg; pitch {} deg;", angle_x, angle_y);
+			spdlog::info("Target offset: yaw {:.3f} deg, pitch {:.3f} deg", angle_x, angle_y);
 
 			int32_t yaw_data = angle_x / 0.00001, pitch_data = angle_y / 0.00001;
 
@@ -273,11 +271,11 @@ int main(int argc, char** argv) {
 			buf[2] = (yaw_data & 0xFF000000) >> 24;
 			buf[3] = (yaw_data & 0x00FF0000) >> 16;
 			buf[4] = (yaw_data & 0x0000FF00) >> 8;
-			buf[5] = (yaw_data & 0x00000000) >> 0;
+			buf[5] = (yaw_data & 0x000000FF) >> 0;
 			buf[6] = (pitch_data & 0xFF000000) >> 24;
 			buf[7] = (pitch_data & 0x00FF0000) >> 16;
 			buf[8] = (pitch_data & 0x0000FF00) >> 8;
-			buf[9] = (pitch_data & 0x00000000) >> 0;
+			buf[9] = (pitch_data & 0x000000FF) >> 0;
 			buf[10] = buf[2] + buf[3] + buf[4] + buf[5] + buf[6] + buf[7] + buf[8] + buf[9];
 			buf[11] = 0xED;
 			buf[12] = 0xED;
@@ -295,5 +293,6 @@ int main(int argc, char** argv) {
 	}
 
 	server.stop();
+	spdlog::info("TCP server stopped.");
 	return 0;
 }
