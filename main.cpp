@@ -1,4 +1,5 @@
 #include <opencv2/opencv.hpp>
+#include "spdlog/spdlog.h"
 
 #include <algorithm>
 #include <cctype>
@@ -234,24 +235,21 @@ void DrawDetection(cv::Mat& frame, const YellowRectDetection& det) {
 int main(int argc, char** argv) {
 	std::string src = (argc > 1) ? argv[1] : "0";
 	int port = 2424;
-    std::string bind_ip = "127.0.0.1";
+    std::string bind_ip = "0.0.0.0";
 	cv::VideoCapture cap;
 	tcp_server server(port, bind_ip);
 	server.start();
 
 	
 	cap.open(src, cv::CAP_V4L2);
-	if (!cap.isOpened()) {
-		single_image = cv::imread(src);
-		image_mode = !single_image.empty();
-	}
 
-	if (!cap.isOpened() && !image_mode) {
+	if (!cap.isOpened()) {
 		std::cerr << "Cannot open source: " << src << std::endl;
 		std::cerr << "Usage: ./main_node [camera_id|video_path|image_path] [--width=1280 --height=720 --fps=30 --buffer=1 --auto_focus=0 --auto_exposure=1 --exposure=-6 --gain=0]"
 				  << std::endl;
 		return 1;
 	}
+
 
 	cv::Mat frame;
 	while (cap.read(frame)) {
@@ -260,6 +258,31 @@ int main(int argc, char** argv) {
 
 		if (det.has_value()) {
 			DrawDetection(frame, det.value());
+
+			cv::Point2f center = det.value().min_rect.center;
+			float angle_x = (center.x / frame.cols - 0.5f) * 10;
+			float angle_y = (center.y / frame.rows - 0.5f) * 10;
+
+			spdlog::info("angle to move : yaw {} deg; pitch {} deg;", angle_x, angle_y);
+
+			int32_t yaw_data = angle_x / 0.00001, pitch_data = angle_y / 0.00001;
+
+			uint8_t buf[13];
+			buf[0] = 0x59;
+			buf[1] = 0x74;
+			buf[2] = (yaw_data & 0xFF000000) >> 24;
+			buf[3] = (yaw_data & 0x00FF0000) >> 16;
+			buf[4] = (yaw_data & 0x0000FF00) >> 8;
+			buf[5] = (yaw_data & 0x00000000) >> 0;
+			buf[6] = (pitch_data & 0xFF000000) >> 24;
+			buf[7] = (pitch_data & 0x00FF0000) >> 16;
+			buf[8] = (pitch_data & 0x0000FF00) >> 8;
+			buf[9] = (pitch_data & 0x00000000) >> 0;
+			buf[10] = buf[2] + buf[3] + buf[4] + buf[5] + buf[6] + buf[7] + buf[8] + buf[9];
+			buf[11] = 0xED;
+			buf[12] = 0xED;
+
+			server.send(buf, sizeof(buf));
 		}
 
 		cv::imshow("yellow_rect_detection", frame);

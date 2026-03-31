@@ -121,6 +121,10 @@ struct tcp_server {
         return true;
     }
 
+    bool send(const void* data, size_t size) {
+        return send(std::string(reinterpret_cast<const char*>(data), size));
+    }
+
 private:
     void io_loop() {
         while (running.load()) {
