@@ -33,7 +33,7 @@ int main(int argc, char **argv){
     int fps = 30;
     int buffer = 1;
     bool auto_focus = true;
-    bool auto_exposure = false;
+    int auto_exposure = 0;
     double exposure = -6.0;
     double gain = 0.0;
 
@@ -43,7 +43,7 @@ int main(int argc, char **argv){
     parser.get<int>("fps", fps, 30, ArgParser::to_int);
     parser.get<int>("buffer", buffer, 1, ArgParser::to_int);
     parser.get<bool>("auto_focus", auto_focus, true, ArgParser::to_bool);
-    parser.get<bool>("auto_exposure", auto_exposure, false, ArgParser::to_bool);
+    parser.get<int>("auto_exposure", auto_exposure, 0, ArgParser::to_int);
     parser.get<double>("exposure", exposure, -6.0, ArgParser::to_double);
     parser.get<double>("gain", gain, 0.0, ArgParser::to_double);
 
@@ -58,20 +58,14 @@ int main(int argc, char **argv){
     }
 
     // V4L2 backend usually expects 3 for auto and 1 for manual.
-    const double auto_exposure_value = auto_exposure ? 3.0 : 1.0;
 
     SetAndReport(cap, cv::CAP_PROP_FRAME_WIDTH, static_cast<double>(width), "width");
     SetAndReport(cap, cv::CAP_PROP_FRAME_HEIGHT, static_cast<double>(height), "height");
     SetAndReport(cap, cv::CAP_PROP_FPS, static_cast<double>(fps), "fps");
     SetAndReport(cap, cv::CAP_PROP_BUFFERSIZE, static_cast<double>(buffer), "buffer");
     SetAndReport(cap, cv::CAP_PROP_AUTOFOCUS, auto_focus ? 1.0 : 0.0, "auto_focus");
-    SetAndReport(cap, cv::CAP_PROP_AUTO_EXPOSURE, auto_exposure_value, "auto_exposure");
-
-    if (!auto_exposure) {
-        SetAndReport(cap, cv::CAP_PROP_EXPOSURE, exposure, "exposure");
-    } else {
-        std::cout << "Skip manual exposure because auto_exposure is enabled." << std::endl;
-    }
+    SetAndReport(cap, cv::CAP_PROP_AUTO_EXPOSURE, auto_exposure, "auto_exposure");
+    SetAndReport(cap, cv::CAP_PROP_EXPOSURE, exposure, "exposure");
 
     SetAndReport(cap, cv::CAP_PROP_GAIN, gain, "gain");
 
