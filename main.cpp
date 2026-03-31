@@ -8,6 +8,8 @@
 #include <string>
 #include <vector>
 
+#include "include/tcp_server.hpp"
+
 namespace {
 
 struct YellowRectDetection {
@@ -15,174 +17,6 @@ struct YellowRectDetection {
 	cv::RotatedRect min_rect;
 	double score = 0.0;
 };
-
-struct CameraConfig {
-	int width = 1280;
-	int height = 720;
-	double fps = 30.0;
-	int buffer_size = 1;
-	bool auto_focus = false;
-	std::optional<bool> auto_exposure;
-	std::optional<double> exposure;
-	std::optional<double> gain;
-};
-
-bool ParseIntOption(const std::string& arg, const std::string& key, int* out) {
-	const std::string prefix = "--" + key + "=";
-	if (arg.rfind(prefix, 0) != 0) {
-		return false;
-	}
-	try {
-		*out = std::stoi(arg.substr(prefix.size()));
-	} catch (...) {
-		return false;
-	}
-	return true;
-}
-
-bool ParseDoubleOption(const std::string& arg, const std::string& key, double* out) {
-	const std::string prefix = "--" + key + "=";
-	if (arg.rfind(prefix, 0) != 0) {
-		return false;
-	}
-	try {
-		*out = std::stod(arg.substr(prefix.size()));
-	} catch (...) {
-		return false;
-	}
-	return true;
-}
-
-bool ParseBoolOption(const std::string& arg, const std::string& key, bool* out) {
-	const std::string prefix = "--" + key + "=";
-	if (arg.rfind(prefix, 0) != 0) {
-		return false;
-	}
-
-	const std::string value = arg.substr(prefix.size());
-	if (value == "1" || value == "true" || value == "on") {
-		*out = true;
-		return true;
-	}
-	if (value == "0" || value == "false" || value == "off") {
-		*out = false;
-		return true;
-	}
-	return false;
-}
-
-bool ParseCameraConfig(int argc, char** argv, CameraConfig* cfg) {
-	for (int i = 2; i < argc; ++i) {
-		const std::string arg = argv[i];
-		int int_value = 0;
-		double double_value = 0.0;
-		bool bool_value = false;
-
-		if (ParseIntOption(arg, "width", &int_value)) {
-			cfg->width = int_value;
-			continue;
-		}
-		if (ParseIntOption(arg, "height", &int_value)) {
-			cfg->height = int_value;
-			continue;
-		}
-		if (ParseDoubleOption(arg, "fps", &double_value)) {
-			cfg->fps = double_value;
-			continue;
-		}
-		if (ParseIntOption(arg, "buffer", &int_value)) {
-			cfg->buffer_size = int_value;
-			continue;
-		}
-		if (ParseBoolOption(arg, "auto_focus", &bool_value)) {
-			cfg->auto_focus = bool_value;
-			continue;
-		}
-		if (ParseBoolOption(arg, "auto_exposure", &bool_value)) {
-			cfg->auto_exposure = bool_value;
-			continue;
-		}
-		if (ParseDoubleOption(arg, "exposure", &double_value)) {
-			cfg->exposure = double_value;
-			continue;
-		}
-		if (ParseDoubleOption(arg, "gain", &double_value)) {
-			cfg->gain = double_value;
-			continue;
-		}
-
-		std::cerr << "Unknown camera option: " << arg << std::endl;
-		return false;
-	}
-
-	if (cfg->width <= 0 || cfg->height <= 0 || cfg->fps <= 0.0 || cfg->buffer_size <= 0) {
-		std::cerr << "Invalid camera options: width/height/fps/buffer must be positive." << std::endl;
-		return false;
-	}
-
-	return true;
-}
-
-void ApplyCameraConfig(cv::VideoCapture& cap, const CameraConfig& cfg) {
-	cap.set(cv::CAP_PROP_FRAME_WIDTH, static_cast<double>(cfg.width));
-	cap.set(cv::CAP_PROP_FRAME_HEIGHT, static_cast<double>(cfg.height));
-	cap.set(cv::CAP_PROP_FPS, cfg.fps);
-	cap.set(cv::CAP_PROP_BUFFERSIZE, static_cast<double>(cfg.buffer_size));
-	cap.set(cv::CAP_PROP_AUTOFOCUS, cfg.auto_focus ? 1.0 : 0.0);
-
-	const bool request_manual_exposure = cfg.exposure.has_value() || cfg.gain.has_value();
-	if (cfg.auto_exposure.has_value()) {
-		if (cfg.auto_exposure.value()) {
-			// Different backends use different value ranges for CAP_PROP_AUTO_EXPOSURE.
-			cap.set(cv::CAP_PROP_AUTO_EXPOSURE, 1.0);
-			cap.set(cv::CAP_PROP_AUTO_EXPOSURE, 0.75);
-		} else {
-			cap.set(cv::CAP_PROP_AUTO_EXPOSURE, 0.0);
-			cap.set(cv::CAP_PROP_AUTO_EXPOSURE, 0.25);
-		}
-	} else if (request_manual_exposure) {
-		// If manual values are provided, try to switch to manual mode first.
-		cap.set(cv::CAP_PROP_AUTO_EXPOSURE, 0.0);
-		cap.set(cv::CAP_PROP_AUTO_EXPOSURE, 0.25);
-	}
-
-	if (cfg.exposure.has_value()) {
-		cap.set(cv::CAP_PROP_EXPOSURE, cfg.exposure.value());
-	}
-	if (cfg.gain.has_value()) {
-		cap.set(cv::CAP_PROP_GAIN, cfg.gain.value());
-	}
-
-	const double applied_width = cap.get(cv::CAP_PROP_FRAME_WIDTH);
-	const double applied_height = cap.get(cv::CAP_PROP_FRAME_HEIGHT);
-	const double applied_fps = cap.get(cv::CAP_PROP_FPS);
-	const double applied_buffer = cap.get(cv::CAP_PROP_BUFFERSIZE);
-	const double applied_af = cap.get(cv::CAP_PROP_AUTOFOCUS);
-	const double applied_ae = cap.get(cv::CAP_PROP_AUTO_EXPOSURE);
-	const double applied_exposure = cap.get(cv::CAP_PROP_EXPOSURE);
-	const double applied_gain = cap.get(cv::CAP_PROP_GAIN);
-
-	std::cout << "Camera config requested: "
-			  << "width=" << cfg.width << ", "
-			  << "height=" << cfg.height << ", "
-			  << "fps=" << cfg.fps << ", "
-			  << "buffer=" << cfg.buffer_size << ", "
-			  << "auto_focus=" << (cfg.auto_focus ? "on" : "off") << ", "
-			  << "auto_exposure="
-			  << (cfg.auto_exposure.has_value() ? (cfg.auto_exposure.value() ? "on" : "off") : "keep") << ", "
-			  << "exposure=" << (cfg.exposure.has_value() ? cv::format("%.3f", cfg.exposure.value()) : "keep") << ", "
-			  << "gain=" << (cfg.gain.has_value() ? cv::format("%.3f", cfg.gain.value()) : "keep") << std::endl;
-
-	std::cout << "Camera config applied: "
-			  << "width=" << applied_width << ", "
-			  << "height=" << applied_height << ", "
-			  << "fps=" << applied_fps << ", "
-			  << "buffer=" << applied_buffer << ", "
-			  << "auto_focus=" << applied_af << ", "
-			  << "auto_exposure=" << applied_ae << ", "
-			  << "exposure=" << applied_exposure << ", "
-			  << "gain=" << applied_gain << std::endl;
-}
 
 std::vector<cv::Point2f> OrderCornersClockwise(const std::vector<cv::Point2f>& pts) {
 	std::vector<cv::Point2f> ordered = pts;
@@ -361,13 +195,6 @@ std::optional<YellowRectDetection> DetectYellowRectangle(const cv::Mat& frame_bg
 	return best;
 }
 
-bool IsNumber(const std::string& s) {
-	if (s.empty()) {
-		return false;
-	}
-	return std::all_of(s.begin(), s.end(), [](unsigned char ch) { return std::isdigit(ch) != 0; });
-}
-
 void DrawDetection(cv::Mat& frame, const YellowRectDetection& det) {
 	for (int i = 0; i < 4; ++i) {
 		cv::line(frame, det.corners[i], det.corners[(i + 1) % 4], cv::Scalar(0, 255, 0), 2);
@@ -406,30 +233,17 @@ void DrawDetection(cv::Mat& frame, const YellowRectDetection& det) {
 
 int main(int argc, char** argv) {
 	std::string src = (argc > 1) ? argv[1] : "0";
-
+	int port = 2424;
+    std::string bind_ip = "127.0.0.1";
 	cv::VideoCapture cap;
-	cv::Mat single_image;
-	bool image_mode = false;
-	const bool camera_mode = IsNumber(src);
-	CameraConfig camera_cfg;
+	tcp_server server(port, bind_ip);
+	server.start();
 
-	if (camera_mode && !ParseCameraConfig(argc, argv, &camera_cfg)) {
-		std::cerr << "Usage: ./main_node [camera_id] [--width=1280 --height=720 --fps=30 --buffer=1 --auto_focus=0 --auto_exposure=1 --exposure=-6 --gain=0]"
-				  << std::endl;
-		return 1;
-	}
-
-	if (camera_mode) {
-		cap.open(std::stoi(src));
-		if (cap.isOpened()) {
-			ApplyCameraConfig(cap, camera_cfg);
-		}
-	} else {
-		cap.open(src, cv::CAP_V4L2);
-		if (!cap.isOpened()) {
-			single_image = cv::imread(src);
-			image_mode = !single_image.empty();
-		}
+	
+	cap.open(src, cv::CAP_V4L2);
+	if (!cap.isOpened()) {
+		single_image = cv::imread(src);
+		image_mode = !single_image.empty();
 	}
 
 	if (!cap.isOpened() && !image_mode) {
@@ -437,20 +251,6 @@ int main(int argc, char** argv) {
 		std::cerr << "Usage: ./main_node [camera_id|video_path|image_path] [--width=1280 --height=720 --fps=30 --buffer=1 --auto_focus=0 --auto_exposure=1 --exposure=-6 --gain=0]"
 				  << std::endl;
 		return 1;
-	}
-
-	if (image_mode) {
-		cv::Mat mask;
-		auto det = DetectYellowRectangle(single_image, &mask);
-		if (det.has_value()) {
-			DrawDetection(single_image, det.value());
-		}
-
-		cv::imshow("yellow_rect_detection", single_image);
-		cv::imshow("yellow_mask", mask);
-		std::cout << "Press any key to exit." << std::endl;
-		cv::waitKey(0);
-		return 0;
 	}
 
 	cv::Mat frame;
@@ -471,5 +271,6 @@ int main(int argc, char** argv) {
 		}
 	}
 
+	server.stop();
 	return 0;
 }

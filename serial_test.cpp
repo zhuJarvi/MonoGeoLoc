@@ -1,96 +1,80 @@
-#include <errno.h>
-#include <fcntl.h>
-#include <string.h>
-#include <termios.h>
-#include <unistd.h>
-
-#include <chrono>
-#include <cstdint>
 #include <iostream>
-#include <string>
-#include <thread>
 #include <vector>
+#include <string>
+#include "unistd.h"
+#include <cstring>
+#include "CSerialPort/SerialPort.h"
+#include "CSerialPort/SerialPortInfo.h"
 
-namespace {
+using namespace itas109;
+using namespace std;
 
-bool ConfigureSerial(int fd, speed_t baud_rate) {
-	termios tty{};
-	if (tcgetattr(fd, &tty) != 0) {
-		std::cerr << "tcgetattr failed: " << strerror(errno) << std::endl;
-		return false;
-	}
+// 自定义串口监听类（处理接收事件）
+class SerialListener : public CSerialPortListener {
+public:
+    void onReadEvent(const char* portName, unsigned int readLen) override {
+        if (readLen <= 0) return;
 
-	cfsetispeed(&tty, baud_rate);
-	cfsetospeed(&tty, baud_rate);
+        vector<char> buf(readLen + 1, 0);
+        int recv = m_sp->readData(buf.data(), readLen);
+        if (recv > 0) {
+            cout << "\n[" << portName << "] 收到数据(" << recv << "字节): " 
+                 << buf.data() << endl;
+        }
+    }
 
-	tty.c_cflag |= (CLOCAL | CREAD);
-	tty.c_cflag &= ~CSIZE;
-	tty.c_cflag |= CS8;
-	tty.c_cflag &= ~PARENB;
-	tty.c_cflag &= ~CSTOPB;
-	tty.c_cflag &= ~CRTSCTS;
+    void setSerialPort(CSerialPort* sp) { m_sp = sp; }
 
-	tty.c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG);
-	tty.c_iflag &= ~(IXON | IXOFF | IXANY);
-	tty.c_iflag &= ~(INLCR | ICRNL | IGNCR);
-	tty.c_oflag &= ~OPOST;
+private:
+    CSerialPort* m_sp = nullptr;
+};
 
-	// Non-blocking style read: return immediately if no data.
-	tty.c_cc[VMIN] = 0;
-	tty.c_cc[VTIME] = 1;  // 100 ms
+int main() {
+    CSerialPort sp;
+    SerialListener listener;
+	listener.setSerialPort(&sp);
 
-	if (tcsetattr(fd, TCSANOW, &tty) != 0) {
-		std::cerr << "tcsetattr failed: " << strerror(errno) << std::endl;
-		return false;
-	}
+    // 4. 打开串口（9600波特率，8N1，无流控）
+    sp.init(
+        "/dev/ttyUSB0",
+        BaudRate115200,          // 波特率
+        ParityNone,     // 校验：无
+        DataBits8,      // 数据位：8
+        StopOne,      // 停止位：1
+        FlowNone,       // 流控：无
+        4096
+    );
+	sp.setReadIntervalTimeout(0);
+	sp.open();
+    if (!sp.isOpen()) {
+        cerr << "打开串口失败: " << sp.getLastErrorMsg() << endl;
+        return -1;
+    }
 
-	tcflush(fd, TCIOFLUSH);
-	return true;
-}
+	sp.connectReadEvent(&listener);
 
-}  // namespace
+    char hex[5];
+    hex[0] = 0x31;
+    hex[1] = 0x32;
+    hex[2] = 0x33;
+    hex[3] = 0x34;
+    hex[4] = 0x35;
+    sp.writeData(hex, sizeof(hex));
 
-int main(int argc, char** argv) {
-	const std::string dev = (argc > 1) ? argv[1] : "/dev/ttyUSB0";
+    // 写入字符串数据
+    sp.writeData("Dapenson", 8);
 
-	int fd = open(dev.c_str(), O_RDWR | O_NOCTTY | O_SYNC);
-	if (fd < 0) {
-		std::cerr << "open " << dev << " failed: " << strerror(errno) << std::endl;
-		return 1;
-	}
+    // 循环等待
+    for (;;)
+    {
+                std::cout << "发送数据: " ;
 
-	if (!ConfigureSerial(fd, B460800)) {
-		close(fd);
-		return 1;
-	}
-
-	std::cout << "serial opened: " << dev << " (115200 8N1 no-flow)" << std::endl;
-
-	while(1) {
-        
-        std::vector<uint8_t> rx_buf = {0x59, 0x74, 0x01, 0x01, 0x02, 0xED, 0xED};
-        ssize_t written_ = write(fd, rx_buf.data(), rx_buf.size());
-		if (written_ < 0) {
-			std::cerr << "write failed: " << strerror(errno) << std::endl;
-		} else {
-			tcdrain(fd);
-		}
-
+        // 延时1S
         sleep(1);
+        // 写入字符串数据
+        const char *data_send = "Dapenson\n";
+    sp.writeData("Dapenson", 8);
+    }
 
-        rx_buf = {0x59, 0x74, 0x03, 0x03, 0x06, 0xED, 0xED};
-        written_ = write(fd, rx_buf.data(), rx_buf.size());
-		if (written_ < 0) {
-			std::cerr << "write failed: " << strerror(errno) << std::endl;
-		} else {
-			tcdrain(fd);
-            std::cout << "TX(" << written_ << " bytes): " << rx_buf[0] << " " << rx_buf[1] << " " << rx_buf[2] << std::endl;
-		}
-        sleep(1);
-
-
-	}
-
-	close(fd);
-	return 0;
+    return 0;
 }
