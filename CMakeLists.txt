@@ -8,15 +8,17 @@ set(CMAKE_CXX_STANDARD 17)
 find_package(OpenCV REQUIRED)
 find_package(spdlog REQUIRED)
 
-find_package(absl REQUIRED)
-find_package(Ceres REQUIRED)
+# find_package(absl REQUIRED)
+# find_package(Ceres REQUIRED)
 
 include_directories(${CMAKE_SOURCE_DIR})
 
-link_libraries(Ceres::ceres spdlog::spdlog)
+link_libraries( spdlog::spdlog)
 include_directories(${OpenCV_INCLUDE_DIRS})
 link_libraries(${OpenCV_LIBS})
 
 add_executable(main_node main.cpp)
 
 add_executable(serial_test serial_test.cpp)
+
+add_executable(camera_config_test camera_config_test.cpp)

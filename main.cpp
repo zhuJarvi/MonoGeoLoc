@@ -425,7 +425,7 @@ int main(int argc, char** argv) {
 			ApplyCameraConfig(cap, camera_cfg);
 		}
 	} else {
-		cap.open(src);
+		cap.open(src, cv::CAP_V4L2);
 		if (!cap.isOpened()) {
 			single_image = cv::imread(src);
 			image_mode = !single_image.empty();
